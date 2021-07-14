@@ -5,7 +5,7 @@ import time, sys
 
 # Variables globales
 listenPort = 9090
-maxConnections = 1
+maxConnections = 2
 maxSize = 2048
 dataBase = ''
 
@@ -21,9 +21,9 @@ class DataBase():
         self.cursor = self.connection.cursor()
 
     def selectAll(self):
-        """ query = 'SELECT name, status \
+        """ query = 'SELECT GPIO, Value \
                 FROM {};'.format(dataBase) """
-        query = 'SELECT name, dni \
+        query = 'SELECT GPIO, Value \
                 FROM {};'.format(dataBase)
         try:
             self.cursor.execute(query)
@@ -31,15 +31,17 @@ class DataBase():
 
             dic = {}
             for ins in instances:
+                # dic[ins[0]] = int.from_bytes(ins[1], byteorder='big')
                 dic[ins[0]] = ins[1]
             response = json.dumps(dic, sort_keys=True)
-            conType = 'application/json'
+            # conType = 'application/json'
+            conType = 'text/plain'
             length = sys.getsizeof(response)
-        except Exception as e:
-            print(e)
+        except:
+            return None
         return response, conType, length
 
-    def selectSome(self, elements):
+    """ def selectSome(self, elements):
         dic = {}
         try:
             for elem in elements:
@@ -50,26 +52,27 @@ class DataBase():
                 ins = self.cursor.fetchone()
                 dic[ins[0]] = ins[1]
             response = json.dumps(dic, sort_keys=True)
-            conType = 'application/json'
+            #conType = 'application/json'
+            conType = 'text/plain'
             length = sys.getsizeof(response)
-        except Exception as e:
-            print(e)
+        except:
+            return None
         return response, conType, length
-
+ """
     def update(self, attributes):
         try:
             for elem in attributes:
-                """ query = 'UPDATE {} \
-                        SET status={} \
-                        WHERE name=\'{}\';'.format(dataBase, elem[1], elem[0]) """
                 query = 'UPDATE {} \
-                        SET age={} \
-                        WHERE name=\'{}\';'.format(dataBase, elem[1], elem[0])
+                        SET Value={} \
+                        WHERE GPIO=\'{}\';'.format(dataBase, elem[1], elem[0])
+                """ query = 'UPDATE {} \
+                        SET active={} \
+                        WHERE name=\'{}\';'.format(dataBase, elem[1], elem[0]) """
                 self.cursor.execute(query)
                 self.connection.commit()
             conType = 'text/plain'
-        except Exception as e:
-            print(e)
+        except:
+            return None
         return str(len(attributes)), conType, sys.getsizeof(attributes)
 
     def close(self):
@@ -101,8 +104,9 @@ def httpCheck(requestMess : str):
     if request[0] == 'GET':
         args = request[1].split('?')
         if len(args) == 2:
-            dataBase, attributes = args[0], args[1].split('&')
-            attributes = list(map(lambda x:x.split('=')[1], attributes))
+            dataBase, attributes = args[0][1:], args[1].split('&')
+            attributes = list(map(lambda x:x.split('='), attributes))
+            print(dataBase, attributes)
         else:
             attributes = None
     elif request[0] == 'POST':
@@ -134,9 +138,10 @@ def createResponse(responseInfo : str, conType : str, conLength : float):
 
     response = 'Date: {}, {:02d} {} {} {}:{}:{} GMT\r\n'.format(days[tm.tm_wday], tm.tm_mday, months[tm.tm_mon-1],
                                                                 tm.tm_year, tm.tm_hour, tm.tm_min, tm.tm_sec)
-    if conType is not None and conType is not None and responseInfo is not None:
-        response += 'Content-Length: {}\r\n'.format(conLength)
+    if conType is not None and conType is not None:
+        # response += 'Content-Length: {}\r\n'.format(conLength)
         response += 'Content-Type: {}\r\n'.format(conType)
+    if responseInfo is not None:
         response += '\r\n' + responseInfo
     return response.encode()
 
@@ -146,29 +151,70 @@ if __name__ == '__main__':
     listenSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listenSocket.bind(('', listenPort))
     listenSocket.listen(maxConnections)
+    listenSocket.settimeout(2.0)
 
     while True:
-        connSocket, adress = listenSocket.accept()
-        requestMess = connSocket.recv(maxSize)
-        ret, method, attributes, version = httpCheck(requestMess.decode('ascii'))
-        if ret:
-            # Nos conectamos con la base de datos
-            db = DataBase()
-            if method == 'GET':
-                if not attributes:
-                    responseInfo, conType, conLength = db.selectAll()
+        try:
+            connSocket, adress = listenSocket.accept()
+            requestMess = connSocket.recv(maxSize).decode()
+            print('Conexion establecida con '+str(adress[0]))
+            print(requestMess)
+            if requestMess == '':
+                raise ValueError
+            ret, method, attributes, version = httpCheck(requestMess)
+            if ret:
+                # Nos conectamos con la base de datos
+                db = DataBase()
+                if method == 'GET':
+                    if not attributes:
+                        responseInfo, conType, conLength = db.selectAll()
+                    else:
+                        responseInfo, conType, conLength = db.update(attributes)
                 else:
-                    responseInfo, conType, conLength = db.selectSome(attributes)
+                    if attributes:
+                        responseInfo, conType, conLength = db.update(attributes)
+                db.close()
+
+                if responseInfo is None:
+                    response = '{} 400 Bad Request\r\n'.format(version).encode()
+                    response += createResponse(responseInfo, None, None)
+                else:
+                    response = '{} 200 OK\r\n'.format(version).encode()
+                    response += createResponse(responseInfo, conType, conLength)
+
             else:
-                if attributes:
-                    responseInfo, conType, conLength = db.update(attributes)
-            db.close()
-
-            response = '{} 200 OK\r\n'.format(version).encode()
-            response += createResponse(responseInfo, conType, conLength)
-
-        else:
-            response = '{} 400 Bad Request\r\n'.format(version). encode()
+                response = '{} 400 Bad Request\r\n'.format(version).encode()
+                response += createResponse(responseInfo, None, None)
+            print(response)
+            connSocket.send(response)
+            connSocket.close()
+            print('Conexion cerrada')
+        except pymysql.err.DatabaseError as e:
+            code, msg = e.args
+            if code == 1049:
+                response = '{} 404 Not Found\r\n'.format(version).encode()
+                responseInfo = '<html><body>Error 404: File not found</body></html>'
+                response += createResponse(responseInfo, None, None)
+                connSocket.send(response)
+                connSocket.close()
+            else:
+                response = '{} 400 Bad Request\r\n'.format(version).encode()
+                responseInfo = '<html><body>Error 400: Bad Request</body></html>'
+                response += createResponse(responseInfo, None, None)
+                connSocket.send(response)
+                connSocket.close()
+        except socket.error as err:
+            pass
+        except UnicodeDecodeError:
+            response = '{} 400 Bad Request\r\n'.format(version).encode()
+            response += 'Accept-Charset: utf-8\r\n'.encode()
+            responseInfo = '<html><body>Error 400: Bad Request</body></html>'
             response += createResponse(responseInfo, None, None)
-        connSocket.send(response)
-        connSocket.close()
+            connSocket.send(response)
+            connSocket.close()
+        except Exception:
+            response = '{} 400 Bad Request\r\n'.format(version).encode()
+            responseInfo = '<html><body>Error 400: Bad Request</body></html>'
+            response += createResponse(responseInfo, None, None)
+            connSocket.send(response)
+            connSocket.close()
