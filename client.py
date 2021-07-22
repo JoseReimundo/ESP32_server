@@ -6,7 +6,7 @@ serverName = 'localhost'
 serverPort = 9090
 clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 clientSocket.connect((serverName,serverPort))
-sentence = 'GET /clientes?KEVIN=5&JOSE=4 HTTP/1.0\r\n\r\n'
+sentence = 'GET /esp32 HTTP/1.0\r\n\r\n'
 # sentence ='POST /clientes HTTP/1.0\r\n\r\n'
 clientSocket.send(sentence.encode())
 response = clientSocket.recv(2048)

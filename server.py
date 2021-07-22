@@ -33,7 +33,7 @@ class DataBase():
             for ins in instances:
                 # dic[ins[0]] = int.from_bytes(ins[1], byteorder='big')
                 dic[ins[0]] = ins[1]
-            response = json.dumps(dic, sort_keys=True)
+            response = json.dumps(dic)
             # conType = 'application/json'
             conType = 'text/plain'
             length = sys.getsizeof(response)
@@ -178,6 +178,7 @@ if __name__ == '__main__':
                 if responseInfo is None:
                     response = '{} 400 Bad Request\r\n'.format(version).encode()
                     response += createResponse(responseInfo, None, None)
+                    print('1')
                 else:
                     response = '{} 200 OK\r\n'.format(version).encode()
                     response += createResponse(responseInfo, conType, conLength)
@@ -185,6 +186,7 @@ if __name__ == '__main__':
             else:
                 response = '{} 400 Bad Request\r\n'.format(version).encode()
                 response += createResponse(responseInfo, None, None)
+                print('2')
             print(response)
             connSocket.send(response)
             connSocket.close()
@@ -201,6 +203,7 @@ if __name__ == '__main__':
                 response = '{} 400 Bad Request\r\n'.format(version).encode()
                 responseInfo = '<html><body>Error 400: Bad Request</body></html>'
                 response += createResponse(responseInfo, None, None)
+                print('3')
                 connSocket.send(response)
                 connSocket.close()
         except socket.error as err:
@@ -210,11 +213,13 @@ if __name__ == '__main__':
             response += 'Accept-Charset: utf-8\r\n'.encode()
             responseInfo = '<html><body>Error 400: Bad Request</body></html>'
             response += createResponse(responseInfo, None, None)
+            print('4')
             connSocket.send(response)
             connSocket.close()
         except Exception:
             response = '{} 400 Bad Request\r\n'.format(version).encode()
             responseInfo = '<html><body>Error 400: Bad Request</body></html>'
             response += createResponse(responseInfo, None, None)
+            print('5')
             connSocket.send(response)
             connSocket.close()
